@@ -1,0 +1,12 @@
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/helpdesk_dev
+    username: root
+    password: YourPasswordHere
+
+jwt:
+  secret: i27academy-secret-key-which-is-32chars
+  expiryMillis: 3600000
