@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: i27-helpdesk-auth
+  namespace: ${NAMESPACE}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: i27-helpdesk-auth 
+  template:
+    metadata:
+      labels:
+        app: i27-helpdesk-auth
+    spec:
+      containers:
+        - name: i27-helpdesk-auth
+          image: ${IMAGE_NAME}:${IMAGE_TAG}
+          ports:
+            - containerPort: 8081
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+              # in auth microservice add liveness and readiness probe
