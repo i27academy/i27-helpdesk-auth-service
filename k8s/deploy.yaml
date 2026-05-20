@@ -18,6 +18,21 @@ spec:
           image: ${IMAGE_NAME}:${IMAGE_TAG}
           ports:
             - containerPort: 8081
+          envFrom:
+          - secretRef:
+              name: i27-helpdesk-auth-secret
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            failoverThreshold: 12
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            failoverThreshold: 12
+            periodSeconds: 10  
           resources:
             limits:
               memory: "256Mi"
