@@ -20,7 +20,7 @@ def deployToGKE(String namespace, String envLabel) {
             sed -i "s|\\\${IMAGE_TAG}|${GIT_COMMIT}|g" k8s/deploy.yaml
 
             # the below are for secret data
-            sed -i "s|\\\${DB_JDBC_URL}|${DB_JDBC_URL}|g" k8s/secret.yaml
+            sed -i "s|{DB_JDBC_URL}|${DB_JDBC_URL}|g" k8s/secret.yaml
             sed -i "s|\\\${DB_USERNAME}|${DB_USERNAME}|g" k8s/secret.yaml
             sed -i "s|\\\${DB_PASSWORD}|${DB_PASSWORD}|g" k8s/secret.yaml
             sed -i "s|\\\${JWT_SECRET}|${JWT_SECRET}|g" k8s/secret.yaml
