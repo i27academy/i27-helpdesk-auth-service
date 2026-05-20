@@ -7,31 +7,30 @@ def deployToGKE(String namespace, String envLabel) {
         string(credentialsId: 'auth-db-jdbc-url', variable: 'DB_JDBC_URL'),
         string(credentialsId: 'auth-db-username', variable: 'DB_USERNAME'),
         string(credentialsId: 'auth-db-password', variable: 'DB_PASSWORD'),
-        string(credentialsId: 'auth-jwt-secret', variable: 'JWT_SECRET'),
+        string(credentialsId: 'auth-jwt-secret', variable: 'JWT_SECRET')
 
-    ])
+    ]) {
+        sh """
+            echo "******************* Deploying to ${envLabel} Environment *********************"
+            echo "Deploying into this namespace: ${NAMESPACE}"
+            kubectl get pods -n ${NAMESPACE}
+            # Substitute variables in kubernetes manifests
+            sed -i "s|\\\${NAMESPACE}|${NAMESPACE}|g" k8s/*.yaml
+            sed -i "s|\\\${IMAGE_NAME}|${IMAGE_NAME}|g" k8s/deploy.yaml
+            sed -i "s|\\\${IMAGE_TAG}|${GIT_COMMIT}|g" k8s/deploy.yaml
 
+            # the below are for secret data
+            sed -i "s|\\\${DB_JDBC_URL}|${DB_JDBC_URL}|g" k8s/secret.yaml
+            sed -i "s|\\\${DB_USERNAME}|${DB_USERNAME}|g" k8s/secret.yaml
+            sed -i "s|\\\${DB_PASSWORD}|${DB_PASSWORD}|g" k8s/secret.yaml
+            sed -i "s|\\\${JWT_SECRET}|${JWT_SECRET}|g" k8s/secret.yaml
 
-    sh """
-        echo "******************* Deploying to ${envLabel} Environment *********************"
-        echo "Deploying into this namespace: ${NAMESPACE}"
-        kubectl get pods -n ${NAMESPACE}
-        # Substitute variables in kubernetes manifests
-        sed -i "s|\\\${NAMESPACE}|${NAMESPACE}|g" k8s/*.yaml
-        sed -i "s|\\\${IMAGE_NAME}|${IMAGE_NAME}|g" k8s/deploy.yaml
-        sed -i "s|\\\${IMAGE_TAG}|${GIT_COMMIT}|g" k8s/deploy.yaml
-
-        # the below are for secret data
-        sed -i "s|\\\${DB_JDBC_URL}|${DB_JDBC_URL}|g" k8s/secret.yaml
-        sed -i "s|\\\${DB_USERNAME}|${DB_USERNAME}|g" k8s/secret.yaml
-        sed -i "s|\\\${DB_PASSWORD}|${DB_PASSWORD}|g" k8s/secret.yaml
-        sed -i "s|\\\${JWT_SECRET}|${JWT_SECRET}|g" k8s/secret.yaml
-
-        
-        echo "Applying k8s manifests in ${envLabel} namespace"
-        kubectl apply -f k8s/
-        echo "Deployment to ${envLabel} namespace is completed"
-    """
+            
+            echo "Applying k8s manifests in ${envLabel} namespace"
+            kubectl apply -f k8s/
+            echo "Deployment to ${envLabel} namespace is completed"
+        """
+    }
 
 }
 def gkeAuth(String clusterName, String zone, String projectId){
