@@ -25,14 +25,16 @@ spec:
             httpGet:
               path: /healthz
               port: 8081
-            failoverThreshold: 12
+            failureThreshold: 3
             periodSeconds: 10
+            timeoutSeconds: 3
           readinessProbe:
             httpGet:
               path: /readyz
               port: 8081
-            failoverThreshold: 12
+            failureThreshold: 12
             periodSeconds: 10  
+            timeoutSeconds: 3
           resources:
             limits:
               memory: "256Mi"
