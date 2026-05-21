@@ -1,0 +1,231 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Reusable: authenticate to GKE and verify node access
+// ─────────────────────────────────────────────────────────────────────────────
+def gkeAuth(String clusterName, String zone, String projectId) {
+    sh """
+        echo "******************************* Authenticating to GKE **************************"
+        gcloud container clusters get-credentials ${clusterName} --zone ${zone} --project ${projectId}
+        echo "******************** Validating Cluster Access *********************"
+        kubectl get nodes
+    """
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reusable: resolve cluster details based on selected environment string
+// ─────────────────────────────────────────────────────────────────────────────
+def resolveCluster(String selectedEnv) {
+    def clusterMap = [
+        'dev'  : [clusterName: 'np-cluster', zone: 'us-east4-a', projectId: 'project-fe6816d0-c7fc-4c9b-bd7'],
+        'test' : [clusterName: 'np-cluster', zone: 'us-east4-a', projectId: 'project-fe6816d0-c7fc-4c9b-bd7'],
+        'stage': [clusterName: 'np-cluster', zone: 'us-east4-a', projectId: 'project-fe6816d0-c7fc-4c9b-bd7'],
+        'prod' : [clusterName: 'np-cluster', zone: 'us-east4-a', projectId: 'project-fe6816d0-c7fc-4c9b-bd7'],
+    ]
+    def cluster = clusterMap[selectedEnv]
+    if (!cluster) {
+        error("Unknown clusterEnv '${selectedEnv}'. Valid values: dev, test, stage, prod")
+    }
+    return cluster
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pipeline
+// ─────────────────────────────────────────────────────────────────────────────
+pipeline {
+    agent {
+        label 'k8s-slave'
+    }
+
+    parameters {
+        // ── Target cluster ─────────────────────────────────────────────────
+        choice(
+            name: 'clusterEnv',
+            choices: 'dev\ntest\nstage\nprod',
+            description: 'Target Kubernetes cluster environment'
+        )
+
+        // ── Namespace operations ────────────────────────────────────────────
+        choice(
+            name: 'createNamespace',
+            choices: 'no\nyes',
+            description: 'Create a new Kubernetes Namespace'
+        )
+        choice(
+            name: 'deleteNamespace',
+            choices: 'no\nyes',
+            description: 'Delete an existing Kubernetes Namespace (destructive — requires approval)'
+        )
+        string(
+            name: 'namespaceName',
+            defaultValue: '',
+            description: 'Namespace name — required for Create/Delete Namespace and PVC operations'
+        )
+
+        // ── PVC operations ──────────────────────────────────────────────────
+        choice(
+            name: 'createPVC',
+            choices: 'no\nyes',
+            description: 'Create a PersistentVolumeClaim in the given namespace'
+        )
+        choice(
+            name: 'deletePVC',
+            choices: 'no\nyes',
+            description: 'Delete a PersistentVolumeClaim (destructive — requires approval)'
+        )
+        string(
+            name: 'pvcName',
+            defaultValue: '',
+            description: 'PVC name — required for Create/Delete PVC operations'
+        )
+        string(
+            name: 'storageSize',
+            defaultValue: '1Gi',
+            description: 'Requested storage size for the PVC (e.g. 1Gi, 5Gi, 10Gi)'
+        )
+        choice(
+            name: 'storageClassName',
+            choices: 'standard\nstandard-rwo\npremium-rwo',
+            description: 'StorageClass to use for the PVC'
+        )
+        choice(
+            name: 'accessMode',
+            choices: 'ReadWriteOnce\nReadOnlyMany\nReadWriteMany',
+            description: 'Access mode for the PVC'
+        )
+    }
+
+    environment {
+        // Dev Cluster Details
+        DEV_CLUSTER_NAME   = "np-cluster"
+        DEV_CLUSTER_ZONE   = "us-east4-a"
+        DEV_PROJECT_ID     = "project-fe6816d0-c7fc-4c9b-bd7"
+
+        // Test Cluster Details
+        TEST_CLUSTER_NAME  = "np-cluster"
+        TEST_CLUSTER_ZONE  = "us-east4-a"
+        TEST_PROJECT_ID    = "project-fe6816d0-c7fc-4c9b-bd7"
+
+        // Stage Cluster Details
+        STAGE_CLUSTER_NAME = "np-cluster"
+        STAGE_CLUSTER_ZONE = "us-east4-a"
+        STAGE_PROJECT_ID   = "project-fe6816d0-c7fc-4c9b-bd7"
+
+        // Prod Cluster Details
+        PROD_CLUSTER_NAME  = "np-cluster"
+        PROD_CLUSTER_ZONE  = "us-east4-a"
+        PROD_PROJECT_ID    = "project-fe6816d0-c7fc-4c9b-bd7"
+    }
+
+    stages {
+
+        // ── Operation 1: Create Namespace ───────────────────────────────────
+        stage('Create Namespace') {
+            when {
+                expression { params.createNamespace == 'yes' }
+            }
+            steps {
+                script {
+                    if (!params.namespaceName?.trim()) {
+                        error("'namespaceName' parameter is required to create a namespace.")
+                    }
+                    def cluster = resolveCluster(params.clusterEnv)
+                    gkeAuth(cluster.clusterName, cluster.zone, cluster.projectId)
+                    sh """
+                        echo "******************* Creating Namespace: ${params.namespaceName} in ${params.clusterEnv} *********************"
+                        sed -i "s|\\\${NAMESPACE}|${params.namespaceName}|g" k8s/namespace.yaml
+                        if kubectl get namespace ${params.namespaceName} > /dev/null 2>&1; then
+                            echo "Namespace '${params.namespaceName}' already exists — skipping creation."
+                        else
+                            kubectl apply -f k8s/namespace.yaml
+                            echo "Namespace '${params.namespaceName}' created successfully."
+                        fi
+                        echo "--- Namespace details ---"
+                        kubectl get namespace ${params.namespaceName}
+                    """
+                }
+            }
+        }
+
+        // ── Operation 2: Create PVC ─────────────────────────────────────────
+        stage('Create PVC') {
+            when {
+                expression { params.createPVC == 'yes' }
+            }
+            steps {
+                script {
+                    if (!params.namespaceName?.trim()) {
+                        error("'namespaceName' parameter is required to create a PVC.")
+                    }
+                    if (!params.pvcName?.trim()) {
+                        error("'pvcName' parameter is required to create a PVC.")
+                    }
+                    def cluster = resolveCluster(params.clusterEnv)
+                    gkeAuth(cluster.clusterName, cluster.zone, cluster.projectId)
+                    sh """
+                        echo "******************* Creating PVC: ${params.pvcName} in namespace: ${params.namespaceName} *********************"
+                        sed -i "s|\\\${NAMESPACE}|${params.namespaceName}|g"  k8s/pvc.yaml
+                        sed -i "s|\\\${PVC_NAME}|${params.pvcName}|g"         k8s/pvc.yaml
+                        sed -i "s|\\\${ACCESS_MODE}|${params.accessMode}|g"   k8s/pvc.yaml
+                        sed -i "s|\\\${STORAGE_SIZE}|${params.storageSize}|g" k8s/pvc.yaml
+                        sed -i "s|\\\${STORAGE_CLASS}|${params.storageClassName}|g" k8s/pvc.yaml
+                        kubectl apply -f k8s/pvc.yaml
+                        echo "--- PVC details ---"
+                        kubectl get pvc ${params.pvcName} -n ${params.namespaceName}
+                    """
+                }
+            }
+        }
+
+        // ── Operation 3: Delete PVC ─────────────────────────────────────────
+        stage('Delete PVC') {
+            when {
+                expression { params.deletePVC == 'yes' }
+            }
+            steps {
+                timeout(time: 300, unit: 'SECONDS') {
+                    input message: "Approve deletion of PVC '${params.pvcName}' in namespace '${params.namespaceName}' on ${params.clusterEnv}?",
+                          submitter: 'sivasre,phanisekhar'
+                }
+                script {
+                    if (!params.namespaceName?.trim()) {
+                        error("'namespaceName' parameter is required to delete a PVC.")
+                    }
+                    if (!params.pvcName?.trim()) {
+                        error("'pvcName' parameter is required to delete a PVC.")
+                    }
+                    def cluster = resolveCluster(params.clusterEnv)
+                    gkeAuth(cluster.clusterName, cluster.zone, cluster.projectId)
+                    sh """
+                        echo "******************* Deleting PVC: ${params.pvcName} from namespace: ${params.namespaceName} *********************"
+                        kubectl delete pvc ${params.pvcName} -n ${params.namespaceName} --ignore-not-found=true
+                        echo "PVC '${params.pvcName}' deleted (or did not exist) in namespace '${params.namespaceName}'."
+                    """
+                }
+            }
+        }
+
+        // ── Operation 4: Delete Namespace ───────────────────────────────────
+        stage('Delete Namespace') {
+            when {
+                expression { params.deleteNamespace == 'yes' }
+            }
+            steps {
+                timeout(time: 300, unit: 'SECONDS') {
+                    input message: "Approve deletion of Namespace '${params.namespaceName}' on ${params.clusterEnv}? WARNING: ALL resources inside will be destroyed!",
+                          submitter: 'sivasre,phanisekhar'
+                }
+                script {
+                    if (!params.namespaceName?.trim()) {
+                        error("'namespaceName' parameter is required to delete a namespace.")
+                    }
+                    def cluster = resolveCluster(params.clusterEnv)
+                    gkeAuth(cluster.clusterName, cluster.zone, cluster.projectId)
+                    sh """
+                        echo "******************* Deleting Namespace: ${params.namespaceName} from ${params.clusterEnv} *********************"
+                        kubectl delete namespace ${params.namespaceName} --ignore-not-found=true
+                        echo "Namespace '${params.namespaceName}' deletion initiated."
+                    """
+                }
+            }
+        }
+    }
+}
