@@ -21,6 +21,12 @@ spec:
           envFrom:
           - secretRef:
               name: i27-helpdesk-auth-secret
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            failureThreshold: 12
+            periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /healthz
